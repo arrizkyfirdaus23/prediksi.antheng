@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prediksi Omzet Antheng</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#10b981">
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen flex flex-col">
+  <header class="bg-emerald-600 text-white shadow-md sticky top-0 z-50">
+    <div class="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
+      <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-chart-line text-xl"></i>
+        <h1 class="font-bold text-lg">Prediksi Omzet</h1>
+      </div>
+      <button id="installBtn" class="hidden bg-emerald-700 hover:bg-emerald-800 text-xs px-3 py-1.5 rounded-lg font-medium transition flex items-center gap-1">
+        <i class="fa-solid fa-download"></i> Install App
+      </button>
+    </div>
+  </header>
+
+  <main class="max-w-md mx-auto w-full px-4 py-4 flex-1 space-y-6 mb-16">
+    <!-- Kartu Prediksi -->
+    <section class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-lg">
+      <p class="text-xs uppercase tracking-wider text-emerald-100 font-semibold">Proyeksi Omzet Besok</p>
+      <h2 id="prediksiValue" class="text-3xl font-extrabold mt-1">Rp 0</h2>
+      <p class="text-xs text-emerald-100 mt-2 flex items-center gap-1">
+        <i class="fa-solid fa-circle-info"></i> Dihitung dari rata-rata 7 hari terakhir (Moving Average)
+      </p>
+    </section>
+
+    <!-- Form Input Omzet -->
+    <section class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+      <h3 class="font-bold text-slate-700 mb-3 text-sm flex items-center gap-2">
+        <i class="fa-solid fa-plus-circle text-emerald-600"></i> Catat Omzet Harian
+      </h3>
+      <form id="formOmzet" class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Tanggal</label>
+          <input type="date" id="inputTanggal" required class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Jumlah Omzet (Rp)</label>
+          <input type="number" id="inputOmzet" placeholder="Contoh: 750000" required class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Catatan / Keterangan (Opsional)</label>
+          <input type="text" id="inputCatatan" placeholder="Contoh: Ramai / Akhir Pekan" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+        </div>
+        <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2.5 rounded-xl text-sm transition shadow-sm cursor-pointer">
+          Simpan Data
+        </button>
+      </form>
+    </section>
+
+    <!-- Grafik Tren -->
+    <section class="bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+      <h3 class="font-bold text-slate-700 mb-3 text-sm flex items-center gap-2">
+        <i class="fa-solid fa-chart-area text-emerald-600"></i> Grafik Tren Omzet
+      </h3>
+      <div class="relative h-56 w-full">
+        <canvas id="chartOmzet"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAyNbzJ2ZCSx2-jIMadnDM8CcqGtUkCNV4",
+      authDomain: "iniprediksiku.firebaseapp.com",
+      projectId: "iniprediksiku",
+      storageBucket: "iniprediksiku.firebasestorage.app",
+      messagingSenderId: "75573236176",
+      appId: "1:75573236176:web:49d39b591828a3926fe9d5"
+    };
+
+    let db = null;
+    let useCloud = false;
+
+    try {
+      if (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY") {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        useCloud = true;
+      }
+    } catch (e) {
+      console.log("Firebase gagal diinisialisasi, menggunakan LocalStorage.");
+    }
+
+    document.getElementById('inputTanggal').valueAsDate = new Date();
+    let chartInstance = null;
+
+    async function ambilData() {
+      if (useCloud && db) {
+        try {
+          const q = query(collection(db, "transaksi_omzet"), orderBy("tanggal", "asc"));
+          const querySnapshot = await getDocs(q);
+          let data = [];
+          querySnapshot.forEach((doc) => {
+            data.push({ id: doc.id, ...doc.data() });
+          });
+          return data;
+        } catch (err) {
+          console.error("Gagal ambil dari cloud, fallback ke local", err);
+        }
+      }
+      const localData = localStorage.getItem('omzet_data');
+      return localData ? JSON.parse(localData) : [];
+    }
+
+    async function simpanData(tanggal, omzet, catatan) {
+      const newData = { tanggal, omzet: Number(omzet), catatan, createdAt: new Date().toISOString() };
+      
+      if (useCloud && db) {
+        try {
+          await addDoc(collection(db, "transaksi_omzet"), newData);
+          return;
+        } catch (err) {
+          console.error("Gagal simpan ke cloud, simpan ke local", err);
+        }
+      }
+
+      let data = await ambilData();
+      data.push(newData);
+      data.sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal));
+      localStorage.setItem('omzet_data', JSON.stringify(data));
+    }
+
+    function hitungPrediksi(data) {
+      if (!data || data.length === 0) return 0;
+      const ambil7 = data.slice(-7);
+      const total = ambil7.reduce((acc, curr) => acc + curr.omzet, 0);
+      return Math.round(total / ambil7.length);
+    }
+
+    async function muatAplikasi() {
+      const data = await ambilData();
+      const hasilPrediksi = hitungPrediksi(data);
+      
+      document.getElementById('prediksiValue').innerText = new Intl.NumberFormat('id-ID', { 
+        style: 'currency', 
+        currency: 'IDR', 
+        maximumFractionDigits: 0 
+      }).format(hasilPrediksi);
+
+      const labels = data.map(item => item.tanggal);
+      const values = data.map(item => item.omzet);
+      const ctx = document.getElementById('chartOmzet').getContext('2d');
+
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Omzet Harian (Rp)',
+            data: values,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            y: { beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    document.getElementById('formOmzet').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const tanggal = document.getElementById('inputTanggal').value;
+      const omzet = document.getElementById('inputOmzet').value;
+      const catatan = document.getElementById('inputCatatan').value;
+
+      await simpanData(tanggal, omzet, catatan);
+      
+      document.getElementById('inputOmzet').value = '';
+      document.getElementById('inputCatatan').value = '';
+      
+      await muatAplikasi();
+      alert('Data omzet berhasil disimpan!');
+    });
+
+    muatAplikasi();
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(() => console.log('Service Worker terdaftar.'))
+          .catch(err => console.log('Gagal register SW:', err));
+      });
+    }
+
+    let deferredPrompt;
+    const installBtn = document.getElementById('installBtn');
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installBtn.classList.remove('hidden');
+      installBtn.addEventListener('click', () => {
+        installBtn.classList.add('hidden');
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            console.log('User menginstal PWA');
+          }
+          deferredPrompt = null;
+        });
+      });
+    });
+  </script>
+</body>
+</html>
